@@ -76,7 +76,7 @@ if uploaded_files:
             st.text(f'Total Data : {df_all.shape[0]}')
             st.dataframe(df_all)
             df_t = df_all.pivot_table(
-            index=["date","topic"],
+            index=["Date","Topic"],
             columns="Country/Region Name",
             values="Email",      # 👈 use Email (or any unique per attendee)
             aggfunc="count",
