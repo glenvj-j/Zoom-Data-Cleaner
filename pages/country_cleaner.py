@@ -44,8 +44,8 @@ def clean_data(file):
     df_attendee_clean = df_attendee[~duplicated_mask]
     
     df_temp = df_attendee_clean[['User Name (Original Name)','Email','Country/Region Name']]
-    df_temp['topic'] = Topic
-    df_temp['date'] = Date
+    df_temp['Topic'] = Topic
+    df_temp['Date'] = Date
     return df_temp
 
 # -----------------------------
