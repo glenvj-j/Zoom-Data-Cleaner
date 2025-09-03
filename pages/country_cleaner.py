@@ -32,7 +32,7 @@ def clean_data(file):
     # Take the latest time to get the date
     Date = df_attendee['Join Time'].iloc[-1][0:10]
 
-    # Drop the duplicated email
+    # Drop duplicated email
     duplicated_mask = df_attendee.drop(
         columns=[
             'User Name (Original Name)','Attended','Join Time','Leave Time',
@@ -42,11 +42,18 @@ def clean_data(file):
     ).duplicated()
 
     df_attendee_clean = df_attendee[~duplicated_mask]
-    
-    df_temp = df_attendee_clean[['User Name (Original Name)','Email','Country/Region Name']]
+
+    # ✅ Handle missing Country column safely
+    keep_cols = ['User Name (Original Name)', 'Email']
+    if 'Country/Region Name' in df_attendee_clean.columns:
+        keep_cols.append('Country/Region Name')
+
+    df_temp = df_attendee_clean[keep_cols].copy()
     df_temp['Topic'] = Topic
     df_temp['Date'] = Date
+
     return df_temp
+
 
 # -----------------------------
 # STREAMLIT APP
@@ -65,45 +72,47 @@ if uploaded_files:
         filename = file.name
         if "attendee" in filename.lower():
             result = clean_data(file)
-            df_all = pd.concat([df_all, result], ignore_index=True)
-            cleaned_files[filename] = result
+            if not result.empty:
+                df_all = pd.concat([df_all, result], ignore_index=True)
+                cleaned_files[filename] = result
         else:
             st.warning(f"⚠️ Skipped: {filename} (not recognized as attendee file)")
-            continue
 
-        if not df_all.empty:
-            st.sidebar.success("✅ Processing complete!")
-            st.text(f'Total Data : {df_all.shape[0]}')
-            st.dataframe(df_all)
-            df_t = df_all.pivot_table(
+    if not df_all.empty:
+        st.sidebar.success("✅ Processing complete!")
+        st.text(f'Total Data : {df_all.shape[0]}')
+        st.dataframe(df_all)
+
+        # Pivot for horizontal view
+        df_t = df_all.pivot_table(
             index=["Date","Topic"],
             columns="Country/Region Name",
-            values="Email",      # 👈 use Email (or any unique per attendee)
+            values="Email",
             aggfunc="count",
             fill_value=0
         )
-            st.text(f'Horizontal Data')
-            df_t.columns.name = None   # 👈 remove the "Country/Region Name" label
-            df_t = df_t.reset_index()
-            st.dataframe(df_t)
-    
-            # Download combined summary
-            csv_all = df_all.to_csv(index=False).encode('utf-8')
-            st.download_button(
-                label="📥 Download Combined Cleaned CSV",
-                data=csv_all,
-                file_name="zoom_attendees_all.csv",
-                mime="text/csv"
-            )
-            # Download combined summary
-            csv_horizontal = df_t.to_csv(index=False).encode('utf-8')
-            st.download_button(
-                label="📥 Download Horizontal CSV",
-                data=csv_horizontal,
-                file_name="horizontal.csv",
-                mime="text/csv"
-            )
+        df_t.columns.name = None   # remove "Country/Region Name" label
+        df_t = df_t.reset_index()
+
+        st.text(f'Horizontal Data')
+        st.dataframe(df_t)
+
+        # Download combined cleaned data
+        csv_all = df_all.to_csv(index=False).encode('utf-8')
+        st.download_button(
+            label="📥 Download Combined Cleaned CSV",
+            data=csv_all,
+            file_name="zoom_attendees_all.csv",
+            mime="text/csv"
+        )
+
+        # Download horizontal data
+        csv_horizontal = df_t.to_csv(index=False).encode('utf-8')
+        st.download_button(
+            label="📥 Download Horizontal CSV",
+            data=csv_horizontal,
+            file_name="horizontal.csv",
+            mime="text/csv"
+        )
 else:
     st.info("Upload one or more Zoom attendee CSV files to begin.")
-
-
