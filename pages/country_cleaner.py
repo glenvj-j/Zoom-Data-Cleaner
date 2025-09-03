@@ -1,5 +1,7 @@
 import streamlit as st
 import pandas as pd
+import io
+import zipfile
 
 def clean_data(file):
     # Reset file pointer
@@ -97,22 +99,27 @@ if uploaded_files:
         st.text(f'Horizontal Data')
         st.dataframe(df_t)
 
-        # Download combined cleaned data
+        # -----------------------------
+        # Prepare both CSVs
+        # -----------------------------
         csv_all = df_all.to_csv(index=False).encode('utf-8')
-        st.download_button(
-            label="📥 Download Combined Cleaned CSV",
-            data=csv_all,
-            file_name="zoom_attendees_all.csv",
-            mime="text/csv"
-        )
-
-        # Download horizontal data
         csv_horizontal = df_t.to_csv(index=False).encode('utf-8')
+        
+        # Create an in-memory ZIP
+        zip_buffer = io.BytesIO()
+        with zipfile.ZipFile(zip_buffer, "w") as zip_file:
+            zip_file.writestr("zoom_attendees_all.csv", csv_all)
+            zip_file.writestr("horizontal.csv", csv_horizontal)
+        
+        # Move cursor to the beginning of the buffer
+        zip_buffer.seek(0)
+        
+        # Single download button
         st.download_button(
-            label="📥 Download Horizontal CSV",
-            data=csv_horizontal,
-            file_name="horizontal.csv",
-            mime="text/csv"
+            label="📥 Download All CSVs (ZIP)",
+            data=zip_buffer,
+            file_name="zoom_reports.zip",
+            mime="application/zip"
         )
 else:
     st.info("Upload one or more Zoom attendee CSV files to begin.")
