@@ -71,19 +71,39 @@ if uploaded_files:
             st.warning(f"⚠️ Skipped: {filename} (not recognized as attendee file)")
             continue
 
-    if not df_all.empty:
-        st.sidebar.success("✅ Processing complete!")
-        st.text(f'Total Data : {df_all.shape[0]}')
-        st.dataframe(df_all)
-        
-
-        # Download combined summary
-        csv_all = df_all.to_csv(index=False).encode('utf-8')
-        st.download_button(
-            label="📥 Download Combined Cleaned CSV",
-            data=csv_all,
-            file_name="zoom_attendees_all.csv",
-            mime="text/csv"
+        if not df_all.empty:
+            st.sidebar.success("✅ Processing complete!")
+            st.text(f'Total Data : {df_all.shape[0]}')
+            st.dataframe(df_all)
+            df_t = df_all.pivot_table(
+            index=["date","topic"],
+            columns="Country/Region Name",
+            values="Email",      # 👈 use Email (or any unique per attendee)
+            aggfunc="count",
+            fill_value=0
         )
+            st.text(f'Horizontal Data')
+            df_t.columns.name = None   # 👈 remove the "Country/Region Name" label
+            df_t = df_t.reset_index()
+            st.dataframe(df_t)
+    
+            # Download combined summary
+            csv_all = df_all.to_csv(index=False).encode('utf-8')
+            st.download_button(
+                label="📥 Download Combined Cleaned CSV",
+                data=csv_all,
+                file_name="zoom_attendees_all.csv",
+                mime="text/csv"
+            )
+            # Download combined summary
+            csv_horizontal = df_t.to_csv(index=False).encode('utf-8')
+            st.download_button(
+                label="📥 Download Horizontal CSV",
+                data=csv_horizontal,
+                file_name="horizontal.csv",
+                mime="text/csv"
+            )
 else:
     st.info("Upload one or more Zoom attendee CSV files to begin.")
+
+
