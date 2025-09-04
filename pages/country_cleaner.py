@@ -28,33 +28,62 @@ def clean_data(file):
     topic_df = pd.read_csv(file, skiprows=2, nrows=1)
     Topic = topic_df['Topic'].iloc[0].replace('iBlooming: ', "")
 
-    # Get the Attendee Data
-    df_attendee = df.iloc[int(df[df['Attended']=="Attendee Details"].index[0])+2:]
-    
-    # Take the latest time to get the date
-    Date = df_attendee['Join Time'].iloc[-1][0:10]
+    # -----------------------------
+    # Panelists section
+    # -----------------------------
+    attendee_idx = df.index[df['Attended'] == "Attendee Details"].tolist()
+    df_panelist = pd.DataFrame()
+    if attendee_idx:  
+        df_panelist = df.iloc[2:attendee_idx[0]].copy()  # rows above "Attendee Details"
+        if not df_panelist.empty and "Email" in df_panelist.columns:
+            df_panelist = df_panelist.drop_duplicates(subset=["Email"])
+            keep_cols = ["User Name (Original Name)", "Email"]
+            if "Country/Region Name" in df_panelist.columns:
+                keep_cols.append("Country/Region Name")
+            df_panelist = df_panelist[keep_cols].copy()
+            df_panelist["Role"] = "Panelist"
+        else:
+            df_panelist = pd.DataFrame()
 
-    # Drop duplicated email
-    duplicated_mask = df_attendee.drop(
-        columns=[
-            'User Name (Original Name)','Attended','Join Time','Leave Time',
-            'Time in Session (minutes)','Is Guest','Country/Region Name'
-        ],
-        errors="ignore"
-    ).duplicated()
+    # -----------------------------
+    # Attendee section
+    # -----------------------------
+    df_attendee = df.iloc[int(attendee_idx[0]) + 2 :] if attendee_idx else pd.DataFrame()
 
-    df_attendee_clean = df_attendee[~duplicated_mask]
+    if not df_attendee.empty:
+        Date = df_attendee['Join Time'].iloc[-1][0:10]
 
-    # ✅ Handle missing Country column safely
-    keep_cols = ['User Name (Original Name)', 'Email']
-    if 'Country/Region Name' in df_attendee_clean.columns:
-        keep_cols.append('Country/Region Name')
+        duplicated_mask = df_attendee.drop(
+            columns=[
+                'User Name (Original Name)','Attended','Join Time','Leave Time',
+                'Time in Session (minutes)','Is Guest','Country/Region Name'
+            ],
+            errors="ignore"
+        ).duplicated()
 
-    df_temp = df_attendee_clean[keep_cols].copy()
-    df_temp['Topic'] = Topic
-    df_temp['Date'] = Date
+        df_attendee_clean = df_attendee[~duplicated_mask]
 
-    return df_temp
+        keep_cols = ["User Name (Original Name)", "Email"]
+        if "Country/Region Name" in df_attendee_clean.columns:
+            keep_cols.append("Country/Region Name")
+
+        df_attendee_clean = df_attendee_clean[keep_cols].copy()
+        df_attendee_clean["Role"] = "Attendee"
+    else:
+        df_attendee_clean = pd.DataFrame()
+        Date = None
+
+    # -----------------------------
+    # Merge Panelists + Attendees
+    # -----------------------------
+    df_combined = pd.concat([df_panelist, df_attendee_clean], ignore_index=True)
+
+    if not df_combined.empty:
+        df_combined["Topic"] = Topic
+        df_combined["Date"] = Date
+
+    return df_combined
+
 
 
 # -----------------------------
