@@ -253,7 +253,7 @@ if uploaded_files:
     for file in uploaded_files:
         filename = file.name
         if filename in processed_files:
-            st.warning(f"⚠️ Skipped duplicate file: {filename}")
+            st.sidebar.warning(f"⚠️ Skipped duplicate file: {filename}")
             continue
         processed_files.add(filename)
 
