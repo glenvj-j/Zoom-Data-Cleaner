@@ -6,7 +6,8 @@ import zipfile
 from datetime import datetime
 
 # Get the current date and time
-now = datetime.now()
+now_utc = datetime.now(timezone.utc)         # current UTC time
+now = now_utc.astimezone(timezone(timedelta(hours=7))) #WIB
 
 # Format the date and time to display only until minutes
 formatted_datetime = now.strftime("%Y-%m-%d %H:%M")
