@@ -189,7 +189,6 @@ def clean_email_level(file):
     Date = str(df_attendee['Join Time'].iloc[-1])[:10]
 
     # ---- DEDUP ----
-    # Use the same technique: ignore volatile columns, dedupe remaining
     dedup_mask = df_attendee.drop(
         columns=[
             'User Name (Original Name)','Attended','Join Time','Leave Time',
@@ -199,30 +198,25 @@ def clean_email_level(file):
     ).duplicated(keep='first')
     df_attendee_clean = df_attendee.loc[~dedup_mask].copy()
 
-    # Keep only relevant columns (Email may be missing in some exports)
+    # Keep only relevant columns
     keep_cols = ['User Name (Original Name)', 'Email']
     if 'Country/Region Name' in df_attendee_clean.columns:
         keep_cols.append('Country/Region Name')
     keep_cols = [c for c in keep_cols if c in df_attendee_clean.columns]
 
     if 'Email' not in keep_cols:
-        # No Email column available -> nothing to contribute to email-level CSV
         return pd.DataFrame()
 
     out = df_attendee_clean[keep_cols].copy()
-
-    # Clean emails (drop empties) and attach keys
     out['Email'] = out['Email'].astype(str).str.strip()
     out = out[out['Email'].ne('') & out['Email'].ne('nan')]
 
     out['Topic'] = Topic
     out['Date'] = Date
 
-    # Ensure uniqueness across repeated join/leave records
     out = out.drop_duplicates(subset=['Email', 'Topic', 'Date'], keep='first')
 
     return out
-
 
 
 # -----------------------------
@@ -245,15 +239,21 @@ if uploaded_files:
     data_summary = pd.DataFrame()
     data_email = pd.DataFrame()
     data_country = pd.DataFrame()
+    processed_files = set()   # prevent duplicates
 
     for file in uploaded_files:
         filename = file.name
+        if filename in processed_files:
+            st.warning(f"⚠️ Skipped duplicate file: {filename}")
+            continue
+        processed_files.add(filename)
+
         if "attendee" in filename.lower():
             result, cleaned, df_t = count_webinar_participant(file)
             df_email = clean_email_level(file)
         elif "participants" in filename.lower():
             result, cleaned, df_t = count_meeting_participant(file, excluded_name)
-            df_email = pd.DataFrame()  # meetings have no email-level detail like webinar
+            df_email = pd.DataFrame()
         else:
             st.warning(f"⚠️ Skipped: {filename} (unknown type)")
             continue
@@ -266,13 +266,19 @@ if uploaded_files:
             data_country = pd.concat([data_country, df_t], ignore_index=True)
 
     if not data_summary.empty:
-        # Merge country counts into summary
+        # Merge aggregated country counts
         if not data_country.empty:
-            data_summary = pd.merge(data_summary, data_country, on=["Date","Topic"], how="left").fillna(0)
+            data_country = data_country.groupby(["Date","Topic"]).sum().reset_index()
+            data_summary = pd.merge(
+                data_summary,
+                data_country,
+                on=["Date","Topic"],
+                how="left"
+            ).fillna(0)
 
         st.success("✅ Processing complete!")
         st.dataframe(data_summary[['Date','Topic','Total_Attendee','Total_Panelist','Total_All','Row_Deleted','Type']])
-        st.text(f"Total Email {data_email.shape[0]}. Exclude Zoom Meeting (Region Not Avaiable)")
+        st.text(f"Total Email {data_email.shape[0]}. Exclude Zoom Meeting (Region Not Available)")
         st.dataframe(data_email)
         
         # -----------------------------
