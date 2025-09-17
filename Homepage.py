@@ -1,6 +1,8 @@
 import streamlit as st
 import pandas as pd
 import re
+import io
+import zipfile
 
 st.set_page_config(page_title="Zoom Data Cleaner", layout="wide")
 st.title("Zoom Data Cleaner")
@@ -15,7 +17,7 @@ def count_webinar_participant(file):
     lines = file.readlines()
     file.seek(0)
 
-    # Find header row (the one containing "User Name (Original Name)")
+    # Find header row
     header_row = None
     for i, line in enumerate(lines):
         if b"User Name (Original Name)" in line:
@@ -23,10 +25,9 @@ def count_webinar_participant(file):
             break
 
     if header_row is None:
-        st.error(f"❌ Could not detect Webinar header row in {file.name}")
-        return pd.DataFrame(), pd.DataFrame()
+        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
 
-    # Topic is usually around row 2
+    # Topic
     file.seek(0)
     topic_df = pd.read_csv(file, skiprows=2, nrows=1)
     Topic = topic_df['Topic'].iloc[0].replace('iBlooming: ', "")
@@ -35,14 +36,13 @@ def count_webinar_participant(file):
     file.seek(0)
     df_webinar = pd.read_csv(file, skiprows=header_row)
 
-    # Take the latest time to get the date
+    # Take latest time as date
     Date = df_webinar['Join Time'].iloc[-1][0:10]
 
     # Find attendee section
     attendee_idx = df_webinar[df_webinar['Attended']=="Attendee Details"].index
     if len(attendee_idx) == 0:
-        st.error(f"❌ Could not detect Attendee section in {file.name}")
-        return pd.DataFrame(), pd.DataFrame()
+        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
 
     # Panelists section
     df_panelist = df_webinar.iloc[2:int(attendee_idx[0])]
@@ -51,27 +51,12 @@ def count_webinar_participant(file):
 
     # Attendees section
     df_attendee = df_webinar.iloc[int(attendee_idx[0])+2:]
-    # Step 2: Find duplicated rows (ignoring some columns)
     duplicated_mask = df_attendee.drop(
-        columns=[
-            'User Name (Original Name)','Attended','Join Time','Leave Time',
-            'Time in Session (minutes)','Is Guest','Country/Region Name'
-        ],
+        columns=['User Name (Original Name)','Attended','Join Time','Leave Time',
+                 'Time in Session (minutes)','Is Guest','Country/Region Name'],
         errors="ignore"
     ).duplicated()
-
-    # Step 3: Get indexes of duplicates
-    df_attendee_duplicated_index = df_attendee[duplicated_mask].index
-
-    # Step 4: Drop those duplicates from df_attendee
-    df_attendee_clean = df_attendee.drop(df_attendee_duplicated_index)
-
-
-    # df_attendee_clean = df_attendee.drop(
-    #     columns=['User Name (Original Name)','Attended','Join Time','Leave Time',
-    #              'Time in Session (minutes)','Is Guest','Country/Region Name'],
-    #     errors="ignore"
-    # ).drop_duplicates()
+    df_attendee_clean = df_attendee[~duplicated_mask].copy()
     df_attendee_clean["Role"] = "Attendee"
 
     # Merge both
@@ -82,6 +67,20 @@ def count_webinar_participant(file):
     total_attendee = (df_clean["Role"]=="Attendee").sum()
     duplicated_data = df_attendee.duplicated().sum()
 
+    # Country pivot
+    df_country = df_clean[['Email','Country/Region Name']].dropna()
+    df_t = df_country.pivot_table(
+        index=[],
+        columns="Country/Region Name",
+        values="Email",
+        aggfunc="count",
+        fill_value=0
+    )
+    df_t.columns.name = None
+    df_t['Date'] = Date
+    df_t['Topic'] = Topic
+    df_t = df_t[['Date','Topic'] + [c for c in df_t.columns if c not in ['Date','Topic']]]
+
     # Summary
     new_data = pd.DataFrame([{
         "Date": Date,
@@ -91,21 +90,17 @@ def count_webinar_participant(file):
         "Total_All": total_attendee + total_panelist,
         "Row_Deleted": duplicated_data,
         "Type": "Webinar"
-    }])   
+    }])
 
-    new_data['Date'] = pd.to_datetime(new_data['Date'], errors='coerce')
-    new_data['Date'] = new_data['Date'].dt.strftime("%d/%m/%Y")
-
-    return new_data, df_clean
+    return new_data, df_clean, df_t
 
 
 def count_meeting_participant(file, excluded_name):
-    # Reset file pointer
     file.seek(0)
     lines = file.readlines()
     file.seek(0)
 
-    # Find header row (the one that contains "Name (original name)")
+    # Find header row
     header_row = None
     for i, line in enumerate(lines):
         if b"Name (original name)" in line:
@@ -113,21 +108,20 @@ def count_meeting_participant(file, excluded_name):
             break
 
     if header_row is None:
-        st.error(f"❌ Could not detect Meeting header row in {file.name}")
-        return pd.DataFrame(), pd.DataFrame()
+        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
 
-    # Read dataframe starting from the header row
+    # Read dataframe starting from header row
     file.seek(0)
     df_meeting = pd.read_csv(file, skiprows=header_row)
 
-    # Topic is usually row 1 col 1
+    # Topic
     file.seek(0)
     Topic = pd.read_csv(file, nrows=1).iloc[0,0]
 
-    # Date comes from "Start time"
+    # Date from "Start time"
     file.seek(0)
     df_meta = pd.read_csv(file)
-    Date = pd.to_datetime(df_meta['Start time'].astype('datetime64[ns]')[0]).strftime("%d/%m/%Y")
+    Date = pd.to_datetime(df_meta['Start time'].astype('datetime64[ns]')[0]).strftime("%Y-%m-%d")
 
     # Clean data
     df_meeting_clean = df_meeting[['Name (original name)','Total duration (minutes)']].drop_duplicates()
@@ -145,6 +139,9 @@ def count_meeting_participant(file, excluded_name):
     total_attendee = (df_meeting_clean['Role']=="Attendee").sum()
     duplicated_data = df_meeting[['Name (original name)','Total duration (minutes)']].duplicated().sum()
 
+    # Fake country pivot (all 0)
+    df_t = pd.DataFrame([{"Date": Date, "Topic": Topic}])
+
     # Summary
     new_data = pd.DataFrame([{
         "Date": Date,
@@ -154,9 +151,78 @@ def count_meeting_participant(file, excluded_name):
         "Total_All": total_attendee + total_panelist,
         "Row_Deleted": duplicated_data,
         "Type": "Meeting"
-    }])   
+    }])
 
-    return new_data, df_meeting_clean
+    return new_data, df_meeting_clean, df_t
+
+
+def clean_email_level(file):
+    """Build attendee-level CSV (unique per Email–Topic–Date) from webinar files."""
+    # Find header row
+    file.seek(0)
+    lines = file.readlines()
+    file.seek(0)
+    header_row = None
+    for i, line in enumerate(lines):
+        if b"User Name (Original Name)" in line:
+            header_row = i
+            break
+    if header_row is None:
+        return pd.DataFrame()
+
+    # Read full table
+    file.seek(0)
+    df = pd.read_csv(file, skiprows=header_row)
+
+    # Topic & attendee section
+    file.seek(0)
+    topic_df = pd.read_csv(file, skiprows=2, nrows=1)
+    Topic = topic_df['Topic'].iloc[0].replace('iBlooming: ', "")
+
+    attendee_anchor = df[df['Attended'] == "Attendee Details"]
+    if attendee_anchor.empty:
+        return pd.DataFrame()
+
+    df_attendee = df.iloc[int(attendee_anchor.index[0]) + 2 :].copy()
+
+    # Date (from last join time)
+    Date = str(df_attendee['Join Time'].iloc[-1])[:10]
+
+    # ---- DEDUP ----
+    # Use the same technique: ignore volatile columns, dedupe remaining
+    dedup_mask = df_attendee.drop(
+        columns=[
+            'User Name (Original Name)','Attended','Join Time','Leave Time',
+            'Time in Session (minutes)','Is Guest','Country/Region Name'
+        ],
+        errors="ignore"
+    ).duplicated(keep='first')
+    df_attendee_clean = df_attendee.loc[~dedup_mask].copy()
+
+    # Keep only relevant columns (Email may be missing in some exports)
+    keep_cols = ['User Name (Original Name)', 'Email']
+    if 'Country/Region Name' in df_attendee_clean.columns:
+        keep_cols.append('Country/Region Name')
+    keep_cols = [c for c in keep_cols if c in df_attendee_clean.columns]
+
+    if 'Email' not in keep_cols:
+        # No Email column available -> nothing to contribute to email-level CSV
+        return pd.DataFrame()
+
+    out = df_attendee_clean[keep_cols].copy()
+
+    # Clean emails (drop empties) and attach keys
+    out['Email'] = out['Email'].astype(str).str.strip()
+    out = out[out['Email'].ne('') & out['Email'].ne('nan')]
+
+    out['Topic'] = Topic
+    out['Date'] = Date
+
+    # Ensure uniqueness across repeated join/leave records
+    out = out.drop_duplicates(subset=['Email', 'Topic', 'Date'], keep='first')
+
+    return out
+
 
 
 # -----------------------------
@@ -176,46 +242,57 @@ excluded_name = [x.strip() for x in excluded_name.split(",")]
 excluded_name = "|".join(excluded_name)
 
 if uploaded_files:
-    data_processed_result = pd.DataFrame()
-    cleaned_files = {}  # store cleaned DataFrames per file
+    data_summary = pd.DataFrame()
+    data_email = pd.DataFrame()
+    data_country = pd.DataFrame()
 
     for file in uploaded_files:
         filename = file.name
         if "attendee" in filename.lower():
-            result, cleaned = count_webinar_participant(file)
+            result, cleaned, df_t = count_webinar_participant(file)
+            df_email = clean_email_level(file)
         elif "participants" in filename.lower():
-            result, cleaned = count_meeting_participant(file, excluded_name)
+            result, cleaned, df_t = count_meeting_participant(file, excluded_name)
+            df_email = pd.DataFrame()  # meetings have no email-level detail like webinar
         else:
             st.warning(f"⚠️ Skipped: {filename} (unknown type)")
             continue
 
         if not result.empty:
-            data_processed_result = pd.concat([data_processed_result, result], ignore_index=True)
-            cleaned_files[filename] = cleaned  # save cleaned data per file
+            data_summary = pd.concat([data_summary, result], ignore_index=True)
+        if not df_email.empty:
+            data_email = pd.concat([data_email, df_email], ignore_index=True)
+        if not df_t.empty:
+            data_country = pd.concat([data_country, df_t], ignore_index=True)
 
-    if not data_processed_result.empty:
+    if not data_summary.empty:
+        # Merge country counts into summary
+        if not data_country.empty:
+            data_summary = pd.merge(data_summary, data_country, on=["Date","Topic"], how="left").fillna(0)
+
         st.success("✅ Processing complete!")
-        st.dataframe(data_processed_result)
+        st.dataframe(data_summary[['Date','Topic','Total_Attendee','Total_Panelist','Total_All','Row_Deleted','Type']])
+        st.text(f"Total Email {data_email.shape[0]}. Exclude Zoom Meeting (Region Not Avaiable)")
+        st.dataframe(data_email)
+        
+        # -----------------------------
+        # Prepare CSVs
+        # -----------------------------
+        csv_summary = data_summary.to_csv(index=False).encode('utf-8')
+        csv_email = data_email.to_csv(index=False).encode('utf-8')
 
-        # Download aggregated summary
-        csv = data_processed_result.to_csv(index=False).encode('utf-8')
+        # Create ZIP
+        zip_buffer = io.BytesIO()
+        with zipfile.ZipFile(zip_buffer, "w") as zip_file:
+            zip_file.writestr("zoom_summary.csv", csv_summary)
+            zip_file.writestr("zoom_email_level.csv", csv_email)
+        zip_buffer.seek(0)
+
         st.download_button(
-            label="📥 Download Processed Summary CSV",
-            data=csv,
-            file_name="zoom_processed_result.csv",
-            mime="text/csv"
+            label="📥 Download Results (ZIP)",
+            data=zip_buffer,
+            file_name="zoom_reports.zip",
+            mime="application/zip"
         )
-
-        # Download each cleaned file
-        st.subheader("📂 Download Combined Cleaned Data per File")
-        for fname, df_clean in cleaned_files.items():
-            if not df_clean.empty:
-                clean_csv = df_clean.to_csv(index=False).encode('utf-8')
-                st.download_button(
-                    label=f"📥 Download cleaned {fname}",
-                    data=clean_csv,
-                    file_name=f"cleaned_{fname}",
-                    mime="text/csv"
-                )
 else:
     st.info("Upload one or more Zoom CSV files to begin.")
