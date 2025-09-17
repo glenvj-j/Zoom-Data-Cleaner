@@ -3,6 +3,14 @@ import pandas as pd
 import re
 import io
 import zipfile
+from datetime import datetime
+
+# Get the current date and time
+now = datetime.now()
+
+# Format the date and time to display only until minutes
+formatted_datetime = now.strftime("%Y-%m-%d %H:%M")
+
 
 st.set_page_config(page_title="Zoom Data Cleaner", layout="wide")
 st.title("Zoom Data Cleaner")
@@ -290,8 +298,8 @@ if uploaded_files:
         # Create ZIP
         zip_buffer = io.BytesIO()
         with zipfile.ZipFile(zip_buffer, "w") as zip_file:
-            zip_file.writestr("zoom_summary.csv", csv_summary)
-            zip_file.writestr("zoom_email_level.csv", csv_email)
+            zip_file.writestr(f"{formatted_datetime}_zoom_summary.csv", csv_summary)
+            zip_file.writestr(f"{formatted_datetime}_zoom_email_level.csv", csv_email)
         zip_buffer.seek(0)
 
         st.download_button(
