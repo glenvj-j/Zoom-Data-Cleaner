@@ -305,7 +305,7 @@ if uploaded_files:
         st.download_button(
             label="📥 Download Results (ZIP)",
             data=zip_buffer,
-            file_name="zoom_reports.zip",
+            file_name=f"{formatted_datetime}_zoom_reports.zip",
             mime="application/zip"
         )
 else:
