@@ -272,7 +272,8 @@ if uploaded_files:
 
         st.success("✅ Processing complete!")
         st.dataframe(data_summary)
-        st.text(f"Total Data {data_email.shape[0]}")
+        st.text(f"Total Email {data_email.shape[0]}. Exclude Zoom Meeting (Region Not Avaiable)")
+        st.dataframe(data_summary)
         # -----------------------------
         # Prepare CSVs
         # -----------------------------
