@@ -271,7 +271,7 @@ if uploaded_files:
             data_summary = pd.merge(data_summary, data_country, on=["Date","Topic"], how="left").fillna(0)
 
         st.success("✅ Processing complete!")
-        st.dataframe(data_summary[['Date','Topic','Total_Attendee','Total_Panelist','Total_All','Row Deleted','Type']])
+        st.dataframe(data_summary[['Date','Topic','Total_Attendee','Total_Panelist','Total_All','Row_Deleted','Type']])
         st.text(f"Total Email {data_email.shape[0]}. Exclude Zoom Meeting (Region Not Avaiable)")
         st.dataframe(data_email)
         
