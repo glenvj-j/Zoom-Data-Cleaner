@@ -347,3 +347,6 @@ if uploaded_files:
         )
 else:
     st.info("Upload one or more Zoom CSV files to begin.")
+
+st.sidebar.text("""Last Update : 26 Sept 2025
+Created by : Glen""")
