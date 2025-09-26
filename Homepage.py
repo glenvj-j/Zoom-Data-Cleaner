@@ -324,16 +324,18 @@ if uploaded_files:
         # -----------------------------
         # Prepare CSVs
         # -----------------------------
-        csv_summary = data_summary.to_csv(index=False).encode('utf-8')
-        csv_email = data_email.to_csv(index=False).encode('utf-8')
-
+        # Prepare CSVs with utf-8-sig for Excel safety
+        csv_summary = data_summary.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig")
+        csv_email   = data_email.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig")
+        
         # Create ZIP
         zip_buffer = io.BytesIO()
         with zipfile.ZipFile(zip_buffer, "w") as zip_file:
-            zip_file.writestr(f"{formatted_datetime}_zoom_summary.csv", csv_summary)
-            zip_file.writestr(f"{formatted_datetime}_zoom_email_level.csv", csv_email)
+            zip_file.writestr(f"{formatted_datetime}_data_summary.csv", csv_summary)
+            zip_file.writestr(f"{formatted_datetime}_data_email.csv", csv_email)
         zip_buffer.seek(0)
-
+        
+        # Download button
         st.download_button(
             label="📥 Download Results (ZIP)",
             data=zip_buffer,
