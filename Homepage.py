@@ -166,8 +166,10 @@ def count_meeting_participant(file, excluded_name):
 
 
 def clean_email_level(file):
-    """Build attendee-level CSV (unique per Email–Topic–Date) from webinar files."""
-    # Find header row
+    """Build attendee-level CSV (unique per Email–Topic–Date) from webinar files,
+    including both Panelists and Attendees.
+    """
+    # Detect header
     file.seek(0)
     lines = file.readlines()
     file.seek(0)
@@ -179,25 +181,45 @@ def clean_email_level(file):
     if header_row is None:
         return pd.DataFrame()
 
-    # Read full table
+    # Full table
     file.seek(0)
     df = pd.read_csv(file, skiprows=header_row)
 
-    # Topic & attendee section
+    # Topic
     file.seek(0)
     topic_df = pd.read_csv(file, skiprows=2, nrows=1)
     Topic = topic_df['Topic'].iloc[0].replace('iBlooming: ', "")
 
+    # Sections
     attendee_anchor = df[df['Attended'] == "Attendee Details"]
     if attendee_anchor.empty:
         return pd.DataFrame()
 
-    df_attendee = df.iloc[int(attendee_anchor.index[0]) + 2 :].copy()
+    attendee_idx = int(attendee_anchor.index[0])
 
-    # Date (from last join time)
+    # -----------------------------
+    # Panelists
+    # -----------------------------
+    df_panelist = df.iloc[2:attendee_idx].copy()
+    if not df_panelist.empty and "Email" in df_panelist.columns:
+        df_panelist = df_panelist.drop_duplicates(subset=["Email"])
+        keep_cols = ["User Name (Original Name)", "Email"]
+        if "Country/Region Name" in df_panelist.columns:
+            keep_cols.append("Country/Region Name")
+        df_panelist = df_panelist[keep_cols].copy()
+        df_panelist["Role"] = "Panelist"
+    else:
+        df_panelist = pd.DataFrame()
+
+    # -----------------------------
+    # Attendees
+    # -----------------------------
+    df_attendee = df.iloc[attendee_idx + 2 :].copy()
+    if df_attendee.empty:
+        return df_panelist
+
     Date = str(df_attendee['Join Time'].iloc[-1])[:10]
 
-    # ---- DEDUP ----
     dedup_mask = df_attendee.drop(
         columns=[
             'User Name (Original Name)','Attended','Join Time','Leave Time',
@@ -207,23 +229,32 @@ def clean_email_level(file):
     ).duplicated(keep='first')
     df_attendee_clean = df_attendee.loc[~dedup_mask].copy()
 
-    # Keep only relevant columns
-    keep_cols = ['User Name (Original Name)', 'Email']
-    if 'Country/Region Name' in df_attendee_clean.columns:
-        keep_cols.append('Country/Region Name')
-    keep_cols = [c for c in keep_cols if c in df_attendee_clean.columns]
+    keep_cols = ["User Name (Original Name)", "Email"]
+    if "Country/Region Name" in df_attendee_clean.columns:
+        keep_cols.append("Country/Region Name")
+    df_attendee_clean = df_attendee_clean[keep_cols].copy()
+    df_attendee_clean["Role"] = "Attendee"
 
-    if 'Email' not in keep_cols:
+    # -----------------------------
+    # Merge Both
+    # -----------------------------
+    out = pd.concat([df_panelist, df_attendee_clean], ignore_index=True)
+
+    if out.empty:
         return pd.DataFrame()
 
-    out = df_attendee_clean[keep_cols].copy()
-    out['Email'] = out['Email'].astype(str).str.strip()
-    out = out[out['Email'].ne('') & out['Email'].ne('nan')]
+    out["Topic"] = Topic
+    out["Date"] = Date
 
-    out['Topic'] = Topic
-    out['Date'] = Date
+    # Ensure proper column order
+    col_order = [
+        "User Name (Original Name)", "Email", "Country/Region Name",
+        "Role", "Topic", "Date"
+    ]
+    out = out.reindex(columns=col_order)
 
-    out = out.drop_duplicates(subset=['Email', 'Topic', 'Date'], keep='first')
+    # Drop duplicates across Role/Email/Topic/Date
+    out = out.drop_duplicates(subset=["Email", "Role", "Topic", "Date"], keep="first")
 
     return out
 
