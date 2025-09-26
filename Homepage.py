@@ -39,8 +39,11 @@ def count_webinar_participant(file):
     # Topic
     file.seek(0)
     topic_df = pd.read_csv(file, skiprows=2, nrows=1)
-    Topic = topic_df['Topic'].iloc[0].replace('iBlooming: ', "")
-
+    try :
+        Topic = topic_df['Topic'].iloc[0].replace('iBlooming: ', "")
+    except :
+        Topic = topic_df['Topic'].iloc[0]
+        
     # Read actual table
     file.seek(0)
     df_webinar = pd.read_csv(file, skiprows=header_row)
